@@ -1,0 +1,141 @@
+---
+name: "RenewalList.CSV"
+jsonfile: "Schemas/renewals_bq.json"
+date_col: "PolicyExpiryDate"
+convert_funcs:
+  'CRSLvl': 'strip_excel'
+  'AgencyNumber': 'strip_excel'
+  'RenewedAtAgencyNo': 'strip_excel'
+  'ProducerCode1': 'strip_excel'
+  'ProducerCode2': 'strip_excel'
+  'DCID': 'strip_excel'
+  'PolicyNumber': 'strip_excel'
+  'RegNumber': 'strip_excel'
+  'OwnerBCDL': 'strip_excel'
+  'PrincipalOperatorBCDL': 'strip_excel'
+  'RateClass': 'strip_excel'
+  'RateGroupCollision': 'strip_excel'
+  'RateGroupCompr': 'strip_excel'
+  'BusinessFunctions': 'strip_excel'
+table_new: "awi-live.Database.retention_update"
+table_old: "awi-live.Database.retention"
+uri1: 'gs://upload_updates/RenewalList.CSV'
+uri2: 'gs://processed_updates/Retention.CSV'
+view_query: |-
+    CREATE OR REPLACE VIEW Database.RETENTION AS (
+    SELECT 
+    reduced_table .* , 
+    COALESCE(meta_geo, 'NA_OR_OUT') as Geography,
+    COALESCE(CHANNEL,'DEALERS') AS Channel,
+    COALESCE(TType,'CHANGE') AS TType,
+    metaAgencyName AS Agency,  
+    CASE WHEN PolicyStatus = 'R' THEN 1 ELSE 0 END AS Renewed,
+    CASE WHEN PolicyStatus = 'C' THEN 1 ELSE 0 END AS Cancelled,
+    CASE WHEN PolicyStatus = 'E' THEN 1 ELSE 0 END AS Expired,
+    CASE WHEN PolicyStatus = 'A' THEN 1 ELSE 0 END AS Active
+    FROM ( 
+        SELECT
+        AgencyNumber,   
+        PolicyNumber,
+        PolicyEffectiveDate,
+        PolicyExpiryDate,
+        TransactionType,
+        LeaseIndicator,
+        DateRenewed,
+        PolicyStatus,
+        ProducerCode1,
+        ProducerCode2,
+        ProducerName1,
+        ProducerName2,
+        RenewedbyProducerCode2,   
+        City,
+        PostalCode, 
+        CommissionAmt,
+        DateCancelled
+        FROM Database.retention 
+    ) AS reduced_table          
+    LEFT JOIN metadata.geo ON City = meta_city
+    LEFT JOIN metadata.channels ON ProducerCode2 = P2
+    LEFT JOIN metadata.agencies ON AgencyNumber = metaAgencyNumber
+    LEFT JOIN metadata.ttypes ON TransactionType = ttno
+    WHERE PolicyNumber IS NOT NULL 
+    ORDER BY PolicyExpiryDate
+    )
+...
+---
+name: "ProductivityReport.CSV"
+jsonfile: "Schemas/transactions_bq.json"
+date_col: "EntryDateTime"
+convert_funcs:
+  'CRSLvl': 'strip_excel'
+  'AgencyNumber': 'strip_excel'
+  'AgencyBatchNo': 'strip_excel'
+  'ICBCBatchNo': 'strip_excel'
+  'FleetNumber': 'strip_excel'
+  'FleetUnitNumber': 'strip_excel'
+  'VehicleType': 'strip_excel'
+  'Decal': 'strip_excel'
+  'DCID': 'strip_excel'
+  'PolicyNumber': 'strip_excel'
+  'RegNumber': 'strip_excel'
+  'RateClass': 'strip_excel'
+  'RateGroupCollision': 'strip_excel'
+  'RateGroupCompr': 'strip_excel'
+table_new: "awi-live.Database.transactions_update"
+table_old: "awi-live.Database.transactions"
+uri1: 'gs://upload_updates/ProductivityReport.CSV'
+uri2: 'gs://processed_updates/Transactions.CSV'
+view_query: |-
+    CREATE OR REPLACE VIEW Database.TRANSACTIONS AS (
+    SELECT *, CASE WHEN Id = MinId THEN 'N' ELSE 'E' END AS IsNew
+    FROM (
+        SELECT *, MIN(Id) OVER (partition by PolicyNumber) AS MinId,
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (ORDER BY EntryDateTime ASC) as Id
+            FROM (
+                SELECT 
+                    EntryDateTime,	
+                    AgencyNumber,
+                    metaAgencyName AS AgencyName,
+                    TransactionType,
+                    COALESCE(TType,'CHANGE') AS TType,
+                    ProducerCode2,
+                    ProducerName2,
+                    COALESCE(CHANNEL,'DEALERS') AS Channel,
+                    COALESCE(PolicyType, 'A') AS PolicyType,
+                    PolicyNumber,
+                    Make,
+                    Model,
+                    VIN AS VIN_A,
+                    City,
+                    COALESCE(meta_geo, 'NA_OR_OUT') AS Geo,
+                    CommTotal
+                FROM Database.transactions
+                LEFT JOIN metadata.ttypes ON TransactionType = ttno
+                LEFT JOIN metadata.channels ON ProducerCode2 = P2
+                LEFT JOIN metadata.geo ON City = meta_city
+                LEFT JOIN metadata.agencies ON AgencyNumber = metaAgencyNumber
+            )
+            ORDER BY EntryDateTime ASC
+        )
+    )
+    ORDER BY EntryDateTime ASC
+    )
+...
+---
+name: "ProductionRpt.xlsx"
+jsonfile: "Schemas/optiom_bq.json"
+date_col: "TRANS_DATE"
+table_new: "awi-live.Database.optiom_update"
+table_old: "awi-live.Database.optiom"
+uri2: 'gs://processed_updates/Optiom.CSV'
+view_query: |-
+    CREATE OR REPLACE VIEW Database.AUTO_OPTIOM AS (
+    SELECT *, optiom.VIN AS VIN_OP
+    FROM Database.TRANSACTIONS
+    LEFT JOIN Database.optiom
+    ON TRANSACTIONS.VIN_A = optiom.VIN
+    WHERE EntryDateTime >= '2019-1-1'
+    ORDER BY EntryDateTime DESC
+    )
+...
