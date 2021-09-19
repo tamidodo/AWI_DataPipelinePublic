@@ -1,0 +1,16 @@
+# Function dependencies, for example:
+# package>=version
+google-cloud-error-reporting==1.1.0
+google-cloud-storage==1.32.0
+google-cloud-bigquery==2.6.2
+pandas==1.2.5
+fsspec
+gcsfs
+pyarrow>=0.4
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation
+PyYAML==5.3.1
+numpy==1.17.4
+google-cloud-pubsub==2.4.1
+openpyxl
